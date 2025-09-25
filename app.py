@@ -14,7 +14,7 @@ basedir = os.path.abspath(os.path.dirname(__file__))
 app = Flask(__name__)
 
 # --- 앱 설정 ---
-app.secret_key = 'a-new-secret-key-for-table-reset'
+app.secret_key = 'a-new-secret-key-for-pagination'
 db_url = os.environ.get('DATABASE_URL')
 if db_url and db_url.startswith("postgres://"):
     db_url = db_url.replace("postgres://", "postgresql://", 1)
@@ -170,17 +170,42 @@ def log_and_update_state(login_id, shorts_url, event_type, session_id):
 def get_comments():
     if session.get('user_role') != 'user': return jsonify(error="Not authorized"), 403
     shorts_url = request.args.get('url')
-    comments = YoutubeComment.query.filter_by(shorts_url=shorts_url).order_by(YoutubeComment.published_at).all()
-    comments_dict = {c.comment_id: {"shorts_url": c.shorts_url, "comment_id": c.comment_id, "parent_id": c.parent_id, "author_name": c.author_name, "comment_text": c.comment_text, "published_at": c.published_at, "like_count": c.like_count, "author_profile_image_url": c.author_profile_image_url, "replies": []} for c in comments}
-    nested_comments = []
-    for comment in comments:
-        if comment.parent_id:
-            parent = comments_dict.get(comment.parent_id)
-            if parent:
-                parent['replies'].append(comments_dict[comment.comment_id])
-        else:
-            nested_comments.append(comments_dict[comment.comment_id])
-    return jsonify(nested_comments)
+    page = request.args.get('page', 1, type=int)
+    per_page = 20
+
+    pagination = YoutubeComment.query.filter_by(shorts_url=shorts_url, parent_id=None).order_by(YoutubeComment.published_at.desc()).paginate(page=page, per_page=per_page, error_out=False)
+    top_level_comments = pagination.items
+    
+    top_level_comment_ids = [c.comment_id for c in top_level_comments]
+
+    replies = YoutubeComment.query.filter(YoutubeComment.shorts_url==shorts_url, YoutubeComment.parent_id.in_(top_level_comment_ids)).all()
+    
+    replies_map = {}
+    for reply in replies:
+        if reply.parent_id not in replies_map:
+            replies_map[reply.parent_id] = []
+        replies_map[reply.parent_id].append(reply)
+
+    comments_data = []
+    for comment in top_level_comments:
+        comment_dict = {
+            "comment_id": comment.comment_id, "parent_id": comment.parent_id, "author_name": comment.author_name,
+            "comment_text": comment.comment_text, "published_at": comment.published_at, "like_count": comment.like_count,
+            "author_profile_image_url": comment.author_profile_image_url, "replies": []
+        }
+        if comment.comment_id in replies_map:
+            for reply in replies_map[comment.comment_id]:
+                comment_dict["replies"].append({
+                    "comment_id": reply.comment_id, "parent_id": reply.parent_id, "author_name": reply.author_name,
+                    "comment_text": reply.comment_text, "published_at": reply.published_at, "like_count": reply.like_count,
+                    "author_profile_image_url": reply.author_profile_image_url,
+                })
+        comments_data.append(comment_dict)
+    
+    return jsonify({
+        "comments": comments_data,
+        "has_next_page": pagination.has_next
+    })
 
 @app.route('/add_comment', methods=['POST'])
 def add_comment():
@@ -194,7 +219,11 @@ def add_comment():
     new_comment = YoutubeComment(shorts_url=shorts_url, comment_id=f"user_comment_{uuid.uuid4()}", parent_id=parent_id, author_name=user_id, comment_text=comment_text, published_at=datetime.now(KST).isoformat(), like_count=0, author_profile_image_url=f"https://i.pravatar.cc/32?u={user_id}")
     db.session.add(new_comment)
     db.session.commit()
-    return jsonify({"comment_id": new_comment.comment_id, "parent_id": new_comment.parent_id, "author_name": new_comment.author_name, "comment_text": new_comment.comment_text, "published_at": new_comment.published_at, "like_count": new_comment.like_count, "author_profile_image_url": new_comment.author_profile_image_url})
+    return jsonify({
+        "comment_id": new_comment.comment_id, "parent_id": new_comment.parent_id, "author_name": new_comment.author_name,
+        "comment_text": new_comment.comment_text, "published_at": new_comment.published_at, "like_count": new_comment.like_count,
+        "author_profile_image_url": new_comment.author_profile_image_url
+    })
 
 
 # --- 관리자 페이지 ---
