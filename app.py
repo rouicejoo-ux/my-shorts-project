@@ -14,8 +14,19 @@ basedir = os.path.abspath(os.path.dirname(__file__))
 
 app = Flask(__name__)
 app.secret_key = 'a-new-secret-key-for-url-parsing'
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(basedir, 'database.db')
+# --- 기존 코드 ---
+# app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(basedir, 'database.db')
+
+# --- 새 코드 ---
+# Render에서 설정할 DATABASE_URL 환경 변수를 읽어옴
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL').replace("://", "ql://", 1)
+
+
 db = SQLAlchemy(app)
+
+import os # 파일 상단에 추가
+
+
 
 config_path = os.path.join(basedir, 'config.json')
 try:
