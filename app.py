@@ -27,14 +27,10 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False # 권장 설정
 # --- 2. 확장 초기화 ---
 db = SQLAlchemy(app)
 
-# --- 3. 외부 설정 및 전역 변수 ---
-config_path = os.path.join(basedir, 'config.json')
-try:
-    with open(config_path, 'r') as config_file:
-        config = json.load(config_file)
-        YOUTUBE_API_KEY = config.get('YOUTUBE_API_KEY')
-except FileNotFoundError:
-    YOUTUBE_API_KEY = None
+# 3. 외부 설정 및 전역 변수 ---
+# config.json 대신 환경 변수에서 직접 API 키를 읽어옵니다.
+YOUTUBE_API_KEY = os.environ.get('YOUTUBE_API_KEY')
+
 
 CRAWL_STATUS = {'is_running': False, 'progress': '대기 중'}
 KST = timezone(timedelta(hours=9))
