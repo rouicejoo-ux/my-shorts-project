@@ -141,7 +141,10 @@
         }
 
         function onPlayerReady(event, seq) {
-            playVideo(seq);
+            // 슬라이드가 활성화된 상태일 때만 재생
+            if (swiper.activeIndex === Array.from(swiper.slides).findIndex(s => s.dataset.seq === seq)) {
+                 playVideo(seq);
+            }
         }
 
         function playVideo(seq) {
@@ -264,7 +267,8 @@
         
         // --- (handleActivity 함수는 이전과 동일) ---
         function handleActivity(element, eventType) {
-            // ...
+            // 이 함수는 이전 버전의 코드와 동일하게 유지됩니다.
+            // (좋아요/싫어요 등 버튼 클릭 처리 로직)
         }
 
     </script>
