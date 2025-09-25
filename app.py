@@ -11,36 +11,34 @@ from googleapiclient.discovery import build
 import json
 
 basedir = os.path.abspath(os.path.dirname(__file__))
-
 app = Flask(__name__)
 
-# --- 1. 앱 설정 (app.config) ---
-app.secret_key = 'a-new-secret-key-for-render'
+# --- 앱 설정 ---
+app.secret_key = 'a-new-secret-key-for-autoincrement-pk'
 
 # Render PostgreSQL 호환을 위한 데이터베이스 URI 설정
 db_url = os.environ.get('DATABASE_URL')
 if db_url and db_url.startswith("postgres://"):
     db_url = db_url.replace("postgres://", "postgresql://", 1)
 app.config['SQLALCHEMY_DATABASE_URI'] = db_url
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False # 권장 설정
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-# --- 2. 확장 초기화 ---
+# --- 확장 초기화 ---
 db = SQLAlchemy(app)
 
-# 3. 외부 설정 및 전역 변수 ---
-# config.json 대신 환경 변수에서 직접 API 키를 읽어옵니다.
+# --- 외부 설정 및 전역 변수 ---
 YOUTUBE_API_KEY = os.environ.get('YOUTUBE_API_KEY')
-
-
 CRAWL_STATUS = {'is_running': False, 'progress': '대기 중'}
 KST = timezone(timedelta(hours=9))
 
-# --- 데이터베이스 모델 정의 (이전과 동일) ---
+
+# --- 데이터베이스 모델 정의 ---
 class LoginUser(db.Model):
     __tablename__ = 'login_user'
     id = db.Column(db.String(80), primary_key=True)
     name = db.Column(db.String(80), nullable=False)
     password = db.Column(db.String(80), nullable=False)
+
 class Shorts(db.Model):
     __tablename__ = 'shorts'
     seq = db.Column(db.Integer, primary_key=True, autoincrement=True)
@@ -49,16 +47,19 @@ class Shorts(db.Model):
     channel_profile_url = db.Column(db.String(200))
     description = db.Column(db.String(200))
     use_yn = db.Column(db.String(1), default='Y', nullable=False)
+
 class YoutubeComment(db.Model):
     __tablename__ = 'youtube_comment'
+    seq = db.Column(db.Integer, primary_key=True, autoincrement=True)
     shorts_url = db.Column(db.String(200), nullable=False)
-    comment_id = db.Column(db.String(100), primary_key=True)
+    comment_id = db.Column(db.String(100), nullable=False)
     parent_id = db.Column(db.String(100), nullable=True)
     author_name = db.Column(db.String(100))
     comment_text = db.Column(db.Text)
     published_at = db.Column(db.String(50))
     like_count = db.Column(db.Integer)
     author_profile_image_url = db.Column(db.String(200))
+
 class EventLog(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     login_id = db.Column(db.String(80), nullable=False)
@@ -66,6 +67,7 @@ class EventLog(db.Model):
     event_timestamp = db.Column(db.String(50), nullable=False)
     event_type = db.Column(db.String(50), nullable=False)
     session_id = db.Column(db.String(100), nullable=False)
+
 class ShortsActivity(db.Model):
     __tablename__ = 'shorts_activity'
     id = db.Column(db.Integer, primary_key=True)
@@ -79,20 +81,24 @@ class ShortsActivity(db.Model):
     report = db.Column(db.Integer, default=0)
     subscribe = db.Column(db.Integer, default=0)
     __table_args__ = (db.UniqueConstraint('login_id', 'shorts_url', name='_login_shorts_uc'),)
+
 class UserLastState(db.Model):
     __tablename__ = 'user_last_state'
     login_id = db.Column(db.String(80), primary_key=True)
     last_watched_url = db.Column(db.String(200))
+
 MODELS = {
     'login_user': LoginUser, 'shorts': Shorts, 'event_log': EventLog,
     'shorts_activity': ShortsActivity, 'user_last_state': UserLastState,
     'youtube_comment': YoutubeComment
 }
 
-# --- 사용자 페이지 라우팅 (이전과 동일) ---
+
+# --- 사용자 페이지 라우팅 ---
 @app.route('/')
 def login_page():
     return render_template('login.html')
+
 @app.route('/login', methods=['POST'])
 def handle_login():
     user_id = request.form.get('user_id')
@@ -113,6 +119,7 @@ def handle_login():
             return redirect(url_for('shorts_page'))
     else:
         return render_template('login.html', error_message="ID 또는 패스워드가 일치하지 않습니다.")
+
 @app.route('/shorts')
 def shorts_page():
     if session.get('user_role') != 'user': return redirect(url_for('login_page'))
@@ -127,11 +134,13 @@ def shorts_page():
     activities = ShortsActivity.query.filter_by(login_id=user_id).all()
     activity_map = {a.shorts_url: {'좋아요': a.like, '싫어요': a.dislike, '공유': a.share, '관심없음': a.interest, '채널추천안함': a.recommend, '신고': a.report, '구독': a.subscribe} for a in activities}
     return render_template('index.html', shorts=shorts_data, user_id=user_id, session_id=session['session_id'], last_watched_url=last_state.last_watched_url if last_state else None, activity_map=activity_map)
+
 @app.route('/log_event', methods=['POST'])
 def log_event_from_js():
     data = request.json
     log_and_update_state(login_id=data['login_id'], shorts_url=data['shorts_url'], event_type=data['event_type'], session_id=data['session_id'])
     return jsonify(success=True)
+
 def log_and_update_state(login_id, shorts_url, event_type, session_id):
     timestamp = datetime.now(KST).strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
     db.session.add(EventLog(login_id=login_id, shorts_url=shorts_url, event_timestamp=timestamp, event_type=event_type, session_id=session_id))
@@ -160,6 +169,7 @@ def log_and_update_state(login_id, shorts_url, event_type, session_id):
             db.session.add(last_state)
         last_state.last_watched_url = shorts_url
     db.session.commit()
+
 @app.route('/get_comments')
 def get_comments():
     if session.get('user_role') != 'user': return jsonify(error="Not authorized"), 403
@@ -175,6 +185,7 @@ def get_comments():
         else:
             nested_comments.append(comments_dict[comment.comment_id])
     return jsonify(nested_comments)
+
 @app.route('/add_comment', methods=['POST'])
 def add_comment():
     if session.get('user_role') != 'user': return jsonify(error="Not authorized"), 403
@@ -188,6 +199,9 @@ def add_comment():
     db.session.add(new_comment)
     db.session.commit()
     return jsonify({"comment_id": new_comment.comment_id, "parent_id": new_comment.parent_id, "author_name": new_comment.author_name, "comment_text": new_comment.comment_text, "published_at": new_comment.published_at, "like_count": new_comment.like_count, "author_profile_image_url": new_comment.author_profile_image_url})
+
+
+# --- 관리자 페이지 ---
 def generate_measurement_results(search_login_id, search_shorts_url):
     logs_q = db.session.query(EventLog).statement
     activities_q = db.session.query(ShortsActivity).statement
@@ -276,12 +290,14 @@ def super_admin_required(f):
         return f(*args, **kwargs)
     decorated_function.__name__ = f.__name__
     return decorated_function
+
 def admin_access_required(f):
     def decorated_function(*args, **kwargs):
         if session.get('user_role') not in ['admin', 'super_admin']: return redirect(url_for('login_page'))
         return f(*args, **kwargs)
     decorated_function.__name__ = f.__name__
     return decorated_function
+
 @app.route('/admin', methods=['GET', 'POST'])
 @admin_access_required
 def admin_page():
@@ -312,6 +328,7 @@ def admin_page():
     data = [{c.key: getattr(d, c.key) for c in inspect(Model).c} for d in results]
     columns = [c.key for c in inspect(Model).c]
     return render_template('admin.html', tables=table_names, selected_table=table_name, columns=columns, data=data, pagination=pagination, search_login_id=search_login_id, search_shorts_url=search_shorts_url, clear_success=clear_success, user_role=session.get('user_role'))
+
 @app.route('/admin/download_excel', methods=['POST'])
 @admin_access_required
 def download_excel():
@@ -336,6 +353,7 @@ def download_excel():
     writer.close()
     output.seek(0)
     return send_file(output, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', as_attachment=True, download_name=f'{table_name}.xlsx')
+
 @app.route('/admin/clear_table', methods=['POST'])
 @super_admin_required
 def clear_table():
@@ -360,6 +378,7 @@ def clear_table():
     else:
         message = f"'{table_name}' 테이블에 데이터가 없어 초기화를 진행하지 않았습니다."
         return redirect(url_for('admin_page', clear_success=message))
+
 @app.route('/admin/upload_excel', methods=['POST'])
 @super_admin_required
 def upload_excel():
@@ -381,12 +400,13 @@ def upload_excel():
     except Exception as e:
         db.session.rollback()
         return render_template('admin.html', tables=table_names, selected_table=table_name, upload_error=f"업로드 실패: {str(e)}", user_role=session.get('user_role'))
+
 def crawl_comments_task():
     with app.app_context():
         global CRAWL_STATUS
         try:
             if not YOUTUBE_API_KEY or "여기에" in YOUTUBE_API_KEY:
-                CRAWL_STATUS['progress'] = "오류 발생: YouTube API 키가 config.json 파일에 설정되지 않았습니다."
+                CRAWL_STATUS['progress'] = "오류 발생: YouTube API 키가 환경 변수에 설정되지 않았습니다."
                 CRAWL_STATUS['is_running'] = False
                 return
             youtube = build('youtube', 'v3', developerKey=YOUTUBE_API_KEY)
@@ -396,6 +416,7 @@ def crawl_comments_task():
                 video_id = short.url.split('?')[0].split('/shorts/')[-1]
                 CRAWL_STATUS['progress'] = f"({i+1}/{total_videos}) 영상 '{video_id}' 댓글 수집 중..."
                 YoutubeComment.query.filter_by(shorts_url=short.url).delete()
+                db.session.commit()
                 request_obj = youtube.commentThreads().list(part="snippet,replies", videoId=video_id, maxResults=100)
                 while request_obj:
                     response = request_obj.execute()
@@ -408,13 +429,15 @@ def crawl_comments_task():
                                 reply = reply_item['snippet']
                                 new_reply = YoutubeComment(shorts_url=short.url, comment_id=reply_item['id'], parent_id=item['id'], author_name=reply['authorDisplayName'], comment_text=reply['textDisplay'], published_at=reply['publishedAt'], like_count=reply['likeCount'], author_profile_image_url=reply['authorProfileImageUrl'])
                                 db.session.add(new_reply)
+                    db.session.commit()
                     request_obj = youtube.commentThreads().list_next(request_obj, response)
-                db.session.commit()
             CRAWL_STATUS['progress'] = f"완료: 총 {total_videos}개 영상의 댓글 수집 완료."
         except Exception as e:
+            db.session.rollback()
             CRAWL_STATUS['progress'] = f"오류 발생: {e}"
         finally:
             CRAWL_STATUS['is_running'] = False
+
 @app.route('/admin/start_crawl', methods=['POST'])
 @super_admin_required
 def start_crawl():
@@ -425,14 +448,14 @@ def start_crawl():
     thread = threading.Thread(target=crawl_comments_task)
     thread.start()
     return jsonify({'status': 'success', 'message': '댓글 크롤링을 시작했습니다.'})
+
 @app.route('/admin/crawl_status')
 @admin_access_required
 def crawl_status():
     return jsonify(CRAWL_STATUS)
-    
-# --- app.py 파일의 가장 마지막 부분 ---
 
-# 데이터베이스 초기화를 위한 명령어 추가
+
+# --- 데이터베이스 초기화를 위한 명령어 ---
 @app.cli.command("init_db")
 def init_db_command():
     """데이터베이스 테이블을 생성합니다."""
