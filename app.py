@@ -13,21 +13,21 @@ import json
 basedir = os.path.abspath(os.path.dirname(__file__))
 
 app = Flask(__name__)
-app.secret_key = 'a-new-secret-key-for-url-parsing'
-# --- 기존 코드 ---
-# app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(basedir, 'database.db')
 
-# --- 새 코드 ---
-# Render에서 설정할 DATABASE_URL 환경 변수를 읽어옴
-app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL').replace("://", "ql://", 1)
+# --- 1. 앱 설정 (app.config) ---
+app.secret_key = 'a-new-secret-key-for-render'
 
+# Render PostgreSQL 호환을 위한 데이터베이스 URI 설정
+db_url = os.environ.get('DATABASE_URL')
+if db_url and db_url.startswith("postgres://"):
+    db_url = db_url.replace("postgres://", "postgresql://", 1)
+app.config['SQLALCHEMY_DATABASE_URI'] = db_url
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False # 권장 설정
 
+# --- 2. 확장 초기화 ---
 db = SQLAlchemy(app)
 
-import os # 파일 상단에 추가
-
-
-
+# --- 3. 외부 설정 및 전역 변수 ---
 config_path = os.path.join(basedir, 'config.json')
 try:
     with open(config_path, 'r') as config_file:
@@ -39,7 +39,7 @@ except FileNotFoundError:
 CRAWL_STATUS = {'is_running': False, 'progress': '대기 중'}
 KST = timezone(timedelta(hours=9))
 
-# --- (이전 모델 정의는 모두 동일) ---
+# --- 데이터베이스 모델 정의 (이전과 동일) ---
 class LoginUser(db.Model):
     __tablename__ = 'login_user'
     id = db.Column(db.String(80), primary_key=True)
@@ -93,7 +93,7 @@ MODELS = {
     'youtube_comment': YoutubeComment
 }
 
-# --- (사용자 페이지 라우팅은 이전과 동일) ---
+# --- 사용자 페이지 라우팅 (이전과 동일) ---
 @app.route('/')
 def login_page():
     return render_template('login.html')
@@ -117,7 +117,6 @@ def handle_login():
             return redirect(url_for('shorts_page'))
     else:
         return render_template('login.html', error_message="ID 또는 패스워드가 일치하지 않습니다.")
-
 @app.route('/shorts')
 def shorts_page():
     if session.get('user_role') != 'user': return redirect(url_for('login_page'))
@@ -127,21 +126,11 @@ def shorts_page():
     shorts_list = Shorts.query.filter_by(use_yn='Y').all()
     shorts_data = []
     for s in shorts_list:
-        shorts_data.append({
-            'seq': s.seq,
-            'url': s.url,
-            'channel_name': s.channel_name,
-            'channel_profile_url': s.channel_profile_url,
-            'description': s.description,
-            # ✅ [수정] URL에서 ? 뒤의 파라미터를 제거한 후 video_id를 추출
-            'video_id': s.url.split('?')[0].split('/shorts/')[-1],
-            'comment_count': comment_counts.get(s.url, 0)
-        })
+        shorts_data.append({'seq': s.seq, 'url': s.url, 'channel_name': s.channel_name, 'channel_profile_url': s.channel_profile_url, 'description': s.description, 'video_id': s.url.split('?')[0].split('/shorts/')[-1], 'comment_count': comment_counts.get(s.url, 0)})
     last_state = UserLastState.query.filter_by(login_id=user_id).first()
     activities = ShortsActivity.query.filter_by(login_id=user_id).all()
     activity_map = {a.shorts_url: {'좋아요': a.like, '싫어요': a.dislike, '공유': a.share, '관심없음': a.interest, '채널추천안함': a.recommend, '신고': a.report, '구독': a.subscribe} for a in activities}
     return render_template('index.html', shorts=shorts_data, user_id=user_id, session_id=session['session_id'], last_watched_url=last_state.last_watched_url if last_state else None, activity_map=activity_map)
-
 @app.route('/log_event', methods=['POST'])
 def log_event_from_js():
     data = request.json
@@ -284,6 +273,7 @@ def generate_measurement_results(search_login_id, search_shorts_url):
     if search_shorts_url: result_df = result_df[result_df['shorts_url'].str.contains(search_shorts_url, na=False)]
     result_df = result_df[final_columns]
     return result_df.to_dict('records'), final_columns
+
 def super_admin_required(f):
     def decorated_function(*args, **kwargs):
         if session.get('user_role') != 'super_admin': return redirect(url_for('admin_page'))
