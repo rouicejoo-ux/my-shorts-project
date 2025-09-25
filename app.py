@@ -433,6 +433,16 @@ def start_crawl():
 @admin_access_required
 def crawl_status():
     return jsonify(CRAWL_STATUS)
+    
+# --- app.py 파일의 가장 마지막 부분 ---
+
+# 데이터베이스 초기화를 위한 명령어 추가
+@app.cli.command("init_db")
+def init_db_command():
+    """데이터베이스 테이블을 생성합니다."""
+    with app.app_context():
+        db.create_all()
+        print("Initialized the database.")
 
 if __name__ == '__main__':
     with app.app_context():
