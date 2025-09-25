@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YouTube Shorts Clone</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script src="https://www.youtube.com/iframe_api"></script>
+</head>
+<body>
+    <input type="hidden" id="user_id" value="{{ user_id }}">
+    <input type="hidden" id="session_id" value="{{ session_id }}">
+    <div class="shorts-container">
+        <div class="short-start-message"><h2>스크롤하면<br>숏폼 시청이 시작됩니다</h2></div>
+        {% for short in shorts %}
+        <div class="short" data-seq="{{ short.seq }}" data-url="{{ short.url }}">
+            <div class="player" id="player-{{ short.seq }}" data-video-id="{{ short.video_id }}"></div>
+            <div class="progress-bar-container"><div class="progress-bar"></div></div>
+            <div class="actions">
+                <div class="action-btn like-btn">❤️<span>0</span></div>
+                <div class="action-btn dislike-btn">👎<span>0</span></div>
+                <div class="action-btn comment-btn">💬<span>{{ short.comment_count }}</span></div>
+                <div class="action-btn share-btn state-toggle-btn">🔗<span>공유</span></div>
+                <div class="action-btn interested-btn state-toggle-btn">🚫<span>관심없음</span></div>
+                <div class="action-btn recommend-btn state-toggle-btn">🔇<span>채널추천안함</span></div>
+                <div class="action-btn report-btn state-toggle-btn">🚩<span>신고</span></div>
+            </div>
+            <div class="info">
+                <div class="channel">
+                    <img src="{{ short.channel_profile_url }}" alt="프로필">
+                    <span>{{ short.channel_name }}</span>
+                    <button class="subscribe-btn">구독</button>
+                </div>
+                <div>{{ short.description }}</div>
+            </div>
+            <div class="like-anim">❤️</div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <div class="bottom-nav">
+        <div>🏠 홈</div> <div>🎬 Shorts</div> <div>➕</div> <div>📺 구독</div> <div>👤 내 페이지</div>
+    </div>
+
+    <div class="comments-popup" id="commentsPopup">
+        <div class="comments-header"><span id="comment-count">댓글</span><button class="close-comment-btn">닫기</button></div>
+        <div class="comments-list" id="commentsList"></div>
+        <div class="comment-input"><input type="text" id="commentInput" placeholder="댓글 추가..."><button id="add-comment-btn">게시</button></div>
+    </div>
+
+    <script>
+        const ACTIVITY_MAP = {{ activity_map | tojson }};
+        const LAST_WATCHED_URL = "{{ last_watched_url or '' }}";
+    </script>
+    <script>
+        const USER_ID = document.getElementById('user_id').value;
+        const SESSION_ID = document.getElementById('session_id').value;
+        let currentShortUrl = '';
+        let players = {};
+        let progressInterval;
+        let ignoreNextPauseLog = false;
+
+        // ✅ [수정] 페이지 이탈 시에도 로그를 보낼 수 있도록 keepalive 옵션 추가
+        function logEvent(eventType, shortsUrl, useKeepalive = false) {
+            const fetchOptions = {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    login_id: USER_ID, 
+                    shorts_url: shortsUrl, 
+                    event_type: eventType, 
+                    session_id: SESSION_ID 
+                })
+            };
+            if (useKeepalive) {
+                fetchOptions.keepalive = true;
+            }
+            fetch('/log_event', fetchOptions);
+        }
+        
+        function onYouTubeIframeAPIReady() { const playerDivs = document.querySelectorAll('.player'); playerDivs.forEach(div => { const videoId = div.dataset.videoId; const playerId = div.id; const player = new YT.Player(playerId, { videoId: videoId, playerVars: { 'autoplay': 0, 'controls': 0, 'mute': 0, 'loop': 1, 'playlist': videoId, 'modestbranding': 1, 'showinfo': 0, 'rel': 0 }, events: { 'onStateChange': onPlayerStateChange } }); players[playerId] = player; }); }
+        
+        function onPlayerStateChange(event) {
+            const player = event.target;
+            const playerDiv = player.getIframe().parentNode;
+            const shortElement = playerDiv.closest('.short');
+            if (!shortElement) return;
+            const shortsUrl = shortElement.dataset.url;
+            const progressBar = shortElement.querySelector('.progress-bar');
+            
+            if (event.data === YT.PlayerState.PLAYING) {
+                logEvent('시청시작', shortsUrl);
+                clearInterval(progressInterval);
+                progressInterval = setInterval(() => {
+                    const currentTime = player.getCurrentTime();
+                    const duration = player.getDuration();
+                    if (duration > 0) { progressBar.style.width = (currentTime / duration) * 100 + '%'; }
+                }, 100);
+            } else if (event.data === YT.PlayerState.PAUSED) {
+                if (ignoreNextPauseLog) {
+                    ignoreNextPauseLog = false; 
+                } else {
+                    logEvent('시청중지_종료', shortsUrl);
+                }
+                clearInterval(progressInterval);
+            } else {
+                 clearInterval(progressInterval);
+                 if (event.data === YT.PlayerState.ENDED) { progressBar.style.width = '0%'; }
+            }
+        }
+        
+        const shorts = document.querySelectorAll('.short');
+        const observer = new IntersectionObserver((entries) => { entries.forEach(entry => { const playerDiv = entry.target.querySelector('.player'); if (!playerDiv) return; const playerId = playerDiv.id; const player = players[playerId]; if (player && typeof player.playVideo === 'function') { if (entry.isIntersecting) { currentShortUrl = entry.target.dataset.url; player.playVideo(); } else { player.pauseVideo(); } } }); }, { threshold: 0.6 });
+        
+        function startShortsFeed() {
+            shorts.forEach(short => observer.observe(short));
+            if (LAST_WATCHED_URL) {
+                const lastWatchedElement = document.querySelector(`.short[data-url="${LAST_WATCHED_URL}"]`);
+                if (lastWatchedElement) { lastWatchedElement.scrollIntoView({ behavior: 'smooth' }); }
+            }
+        }
+
+        // --- (이하 나머지 코드는 이전과 동일) ---
+        shorts.forEach(short => { short.addEventListener('click', (e) => { const playerDiv = short.querySelector('.player'); if (!playerDiv) return; const playerId = playerDiv.id; const player = players[playerId]; if (player && typeof player.getPlayerState === 'function') { const playerState = player.getPlayerState(); if (playerState === YT.PlayerState.PLAYING) { player.pauseVideo(); } else { player.playVideo(); } } }); });
+        function restoreActivityStates() { shorts.forEach(short => { const shortsUrl = short.dataset.url; const state = ACTIVITY_MAP[shortsUrl]; if (!state) return; if (state['좋아요'] === 1) { const btn = short.querySelector('.like-btn'); btn.querySelector('span').textContent = '1'; btn.classList.add('active'); } if (state['싫어요'] === 1) { const btn = short.querySelector('.dislike-btn'); btn.querySelector('span').textContent = '1'; btn.classList.add('active'); } if (state['공유'] === 1) { short.querySelector('.share-btn').classList.add('active'); } if (state['관심없음'] === 1) { short.querySelector('.interested-btn').classList.add('active'); } if (state['채널추천안함'] === 1) { short.querySelector('.recommend-btn').classList.add('active'); } if (state['신고'] === 1) { short.querySelector('.report-btn').classList.add('active'); } if (state['구독'] === 1) { const btn = short.querySelector('.subscribe-btn'); btn.textContent = '구독중'; btn.classList.add('active'); } }); }
+        window.addEventListener('load', () => {
+             restoreActivityStates();
+             // 페이지 로드 시 바로 피드 시작
+             startShortsFeed();
+        });
+        document.querySelectorAll('.short').forEach(short => { const likeBtn = short.querySelector('.like-btn'); const dislikeBtn = short.querySelector('.dislike-btn'); const likeSpan = likeBtn.querySelector('span'); const dislikeSpan = dislikeBtn.querySelector('span'); const shortsUrl = short.dataset.url; likeBtn.addEventListener('click', (e) => { e.stopPropagation(); if (likeSpan.textContent === '0') { likeSpan.textContent = '1'; likeBtn.classList.add('active'); logEvent('좋아요', shortsUrl); if (dislikeSpan.textContent === '1') { dislikeSpan.textContent = '0'; dislikeBtn.classList.remove('active'); logEvent('싫어요취소', shortsUrl); } } else { likeSpan.textContent = '0'; likeBtn.classList.remove('active'); logEvent('좋아요취소', shortsUrl); } }); dislikeBtn.addEventListener('click', (e) => { e.stopPropagation(); if (dislikeSpan.textContent === '0') { dislikeSpan.textContent = '1'; dislikeBtn.classList.add('active'); logEvent('싫어요', shortsUrl); if (likeSpan.textContent === '1') { likeSpan.textContent = '0'; likeBtn.classList.remove('active'); logEvent('좋아요취소', shortsUrl); } } else { dislikeSpan.textContent = '0'; dislikeBtn.classList.remove('active'); logEvent('싫어요취소', shortsUrl); } }); });
+        document.querySelectorAll('.state-toggle-btn').forEach(btn => { btn.addEventListener('click', (e) => { e.stopPropagation(); const shortsUrl = e.currentTarget.closest('.short').dataset.url; const isActive = e.currentTarget.classList.toggle('active'); let eventType = ''; if (btn.classList.contains('share-btn')) eventType = '공유'; else if (btn.classList.contains('interested-btn')) eventType = '관심없음'; else if (btn.classList.contains('recommend-btn')) eventType = '채널추천안함'; else if (btn.classList.contains('report-btn')) eventType = '신고'; logEvent(isActive ? eventType : eventType + '취소', shortsUrl); }); });
+        document.querySelectorAll('.subscribe-btn').forEach(btn => { btn.addEventListener('click', (e) => { e.stopPropagation(); const shortsUrl = e.currentTarget.closest('.short').dataset.url; if (e.currentTarget.textContent === '구독') { e.currentTarget.textContent = '구독중'; e.currentTarget.classList.add('active'); logEvent('구독', shortsUrl); } else { e.currentTarget.textContent = '구독'; e.currentTarget.classList.remove('active'); logEvent('구독취소', shortsUrl); } }); });
+        const commentsPopup = document.getElementById('commentsPopup');
+        const commentsList = document.getElementById('commentsList');
+        const commentCountSpan = document.getElementById('comment-count');
+        const commentInput = document.getElementById('commentInput');
+        const addCommentBtn = document.getElementById('add-comment-btn');
+        function createCommentHTML(comment) { let repliesHTML = ''; if (comment.replies && comment.replies.length > 0) { repliesHTML += '<div class="replies-container">'; comment.replies.forEach(reply => { repliesHTML += createCommentHTML(reply); }); repliesHTML += '</div>'; } return ` <div class="comment" id="comment-${comment.comment_id}"> <img src="${comment.author_profile_image_url || 'https://via.placeholder.com/32'}" alt="프로필"> <div class="comment-body"> <div class="comment-meta"><strong>${comment.author_name}</strong> · <span class="date">${formatTimeAgo(comment.published_at)}</span></div> <div class="comment-text">${comment.comment_text}</div> <div class="comment-actions"> <span>❤️ ${comment.like_count}</span> <span onclick="showReplyForm('${comment.comment_id}')">답글</span> </div> ${repliesHTML} </div> </div>`; }
+        function showReplyForm(parentId) { const existingForm = document.getElementById('reply-form'); if(existingForm) existingForm.remove(); const parentComment = document.getElementById(`comment-${parentId}`).querySelector('.comment-body'); const replyFormHTML = ` <div id="reply-form" class="reply-form"> <input type="text" id="reply-input" placeholder="답글 추가..."> <button onclick="postComment('${parentId}')">게시</button> <button onclick="document.getElementById('reply-form').remove()">취소</button> </div>`; parentComment.insertAdjacentHTML('beforeend', replyFormHTML); document.getElementById('reply-input').focus(); }
+        async function postComment(parentId = null) { const inputElem = parentId ? document.getElementById('reply-input') : commentInput; const commentText = inputElem.value.trim(); if (!commentText) return; const response = await fetch('/add_comment', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ shorts_url: currentShortUrl, comment_text: commentText, parent_id: parentId }) }); const newComment = await response.json(); if (newComment.error) { alert('댓글 작성 실패: ' + newComment.error); } else { const newCommentHTML = createCommentHTML({ ...newComment, replies: [] }); if (parentId) { const parentContainer = document.getElementById(`comment-${parentId}`).querySelector('.replies-container') || document.getElementById(`comment-${parentId}`).querySelector('.comment-body'); if (!parentContainer.querySelector('.replies-container')) { parentContainer.insertAdjacentHTML('beforeend', '<div class="replies-container"></div>'); } parentContainer.querySelector('.replies-container').insertAdjacentHTML('beforeend', newCommentHTML); document.getElementById('reply-form').remove(); } else { if (commentsList.innerHTML.includes('아직 댓글이 없습니다.')) commentsList.innerHTML = ''; commentsList.insertAdjacentHTML('beforeend', newCommentHTML); inputElem.value = ''; commentsList.scrollTop = commentsList.scrollHeight; } } }
+        addCommentBtn.addEventListener('click', () => postComment(null));
+        commentInput.addEventListener('keyup', (event) => { if (event.key === 'Enter') postComment(null); });
+        function toggleComments(shortsUrl) { const popup = document.getElementById('commentsPopup'); const isOpen = popup.style.bottom === "0px"; if (isOpen) { popup.style.bottom = "-100%"; } else { fetchAndRenderComments(shortsUrl); popup.style.bottom = "0px"; } }
+        document.querySelectorAll('.comment-btn').forEach(btn => { btn.addEventListener('click', (e) => { e.stopPropagation(); const shortElement = e.currentTarget.closest('.short'); const shortsUrl = shortElement.dataset.url; const playerDiv = shortElement.querySelector('.player'); const playerId = playerDiv.id; const player = players[playerId]; if (player && typeof player.pauseVideo === 'function') { player.pauseVideo(); } logEvent('댓글클릭', shortsUrl); toggleComments(shortsUrl); }); });
+        document.querySelector('.close-comment-btn').addEventListener('click', (e) => { logEvent('댓글닫기클릭', currentShortUrl); toggleComments(currentShortUrl); const currentShortElement = Array.from(shorts).find(short => short.dataset.url === currentShortUrl); if (currentShortElement) { const playerDiv = currentShortElement.querySelector('.player'); const playerId = playerDiv.id; const player = players[playerId]; if (player && typeof player.playVideo === 'function') { ignoreNextPauseLog = true; player.playVideo(); } } });
+        function formatTimeAgo(dateString) { const date = new Date(dateString); const now = new Date(); const seconds = Math.floor((now - date) / 1000); let interval = seconds / 31536000; if (interval > 1) return Math.floor(interval) + "년 전"; interval = seconds / 2592000; if (interval > 1) return Math.floor(interval) + "개월 전"; interval = seconds / 86400; if (interval > 1) return Math.floor(interval) + "일 전"; interval = seconds / 3600; if (interval > 1) return Math.floor(interval) + "시간 전"; interval = seconds / 60; if (interval > 1) return Math.floor(interval) + "분 전"; return "방금 전"; }
+        async function fetchAndRenderComments(shortsUrl) { commentsList.innerHTML = '로딩 중...'; const response = await fetch(`/get_comments?url=${encodeURIComponent(shortsUrl)}`); const comments = await response.json(); commentsList.innerHTML = ''; let totalComments = 0; if (comments.error) { commentsList.innerHTML = '댓글을 불러오는 데 실패했습니다.'; } else { comments.forEach(comment => { commentsList.innerHTML += createCommentHTML(comment); totalComments += 1 + (comment.replies ? comment.replies.length : 0); }); if (comments.length === 0) { commentsList.innerHTML = '아직 댓글이 없습니다.'; } } commentCountSpan.textContent = `댓글 ${totalComments}개`; }
+        
+        // ✅ [추가] 페이지를 떠날 때 시청중지 로그를 남기는 이벤트 리스너
+        window.addEventListener('pagehide', () => {
+            if (currentShortUrl) {
+                // keepalive 옵션을 사용하여 페이지가 닫히는 중에도 요청이 취소되지 않도록 함
+                logEvent('시청중지_종료', currentShortUrl, true);
+            }
+        });
+    </script>
+</body>
+</html>

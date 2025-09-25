@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>Admin Page</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; margin: 20px; background-color: #f8f9fa; color: #212529; }
+        h1, h2 { color: #343a40; }
+        .container { display: flex; flex-wrap: wrap; gap: 20px; }
+        .card { padding: 20px; border: 1px solid #dee2e6; border-radius: 8px; background-color: #fff; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+        select, input, button { padding: 10px; margin-right: 10px; border-radius: 5px; border: 1px solid #ced4da; font-size: 14px; }
+        button { cursor: pointer; background-color: #007bff; color: white; border-color: #007bff; font-weight: 500; }
+        button:hover { background-color: #0069d9; }
+        .btn-danger { background-color: #dc3545; border-color: #dc3545; }
+        .btn-danger:hover { background-color: #c82333; }
+        .btn-special { background-color: #28a745; border-color: #28a745; }
+        .btn-special:hover { background-color: #218838; }
+        .btn-special:disabled { background-color: #6c757d; border-color: #6c757d; cursor: not-allowed; }
+        .search-filters { margin-top: 15px; }
+        #table-container { margin-top: 20px; }
+        .table-wrapper { max-height: 60vh; overflow: auto; }
+        table { border-collapse: collapse; width: 100%; min-width: 600px; }
+        th, td { border: 1px solid #dee2e6; padding: 12px; text-align: left; }
+        th { background-color: #e9ecef; position: sticky; top: 0; }
+        .message { margin-top: 15px; padding: 15px; border-radius: 5px; }
+        .success { color: #155724; background-color: #d4edda; border-color: #c3e6cb; }
+        .error { color: #721c24; background-color: #f8d7da; border-color: #f5c6cb; }
+        .info { color: #0c5460; background-color: #d1ecf1; border-color: #bee5eb; }
+        .pagination { margin: 20px 0; text-align: center; }
+        .pagination a, .pagination strong { display: inline-block; padding: 8px 12px; margin: 0 2px; border: 1px solid #dee2e6; border-radius: 5px; text-decoration: none; color: #007bff; }
+        .pagination strong { background-color: #007bff; color: white; border-color: #007bff; }
+        .pagination a:hover { background-color: #e9ecef; }
+    </style>
+</head>
+<body>
+    <h1>Admin Data Management (Role: {{ user_role }})</h1>
+    
+    <div class="container">
+        <div class="card">
+            <h2>View Table / Results</h2>
+            <form action="/admin" method="post">
+                <select id="table-select" name="table">
+                    <option value="">-- 선택 --</option>
+                    <option value="measurement_results" {% if selected_table == 'measurement_results' %}selected{% endif %}>측정결과</option>
+                    <option disabled>──────────</option>
+                    {% for table in tables %}
+                        <option value="{{ table }}" {% if selected_table == table %}selected{% endif %}>{{ table }}</option>
+                    {% endfor %}
+                </select>
+                
+                <div id="search-filters" class="search-filters" style="display: none;">
+                    <input type="text" name="search_login_id" placeholder="login_id" value="{{ search_login_id or '' }}">
+                    <input type="text" name="search_shorts_url" placeholder="shorts_url" value="{{ search_shorts_url or '' }}">
+                </div>
+                
+                <button type="submit">조회</button>
+                
+                {% if user_role == 'super_admin' and selected_table and selected_table != 'measurement_results' %}
+                <button type="submit" formaction="/admin/clear_table" formmethod="post" class="btn-danger"
+                        onclick="return confirm('선택한 테이블의 모든 데이터를 백업(엑셀 다운로드) 후 삭제합니다. 정말 진행하시겠습니까?')">
+                    데이터 초기화
+                </button>
+                {% endif %}
+            </form>
+        </div>
+
+        {% if user_role == 'super_admin' %}
+        <div class="card">
+            <h2>Upload Excel</h2>
+             <form action="/admin/upload_excel" method="post" enctype="multipart/form-data">
+                <p>업로드 대상: 'login_user' 또는 'shorts'</p>
+                <select name="table">
+                    <option value="login_user">login_user</option>
+                    <option value="shorts">shorts</option>
+                </select>
+                <input type="file" name="excelFile" accept=".xlsx, .xls" required>
+                <button type="submit">엑셀 업로드</button>
+            </form>
+        </div>
+        <div class="card">
+            <h2>Crawl Youtube Comments</h2>
+            <p>'shorts' 테이블(use_yn='Y')의 모든 영상 댓글을 수집합니다.</p>
+            <button id="crawl-btn" class="btn-special" onclick="startCrawl()">댓글 크롤링 시작</button>
+            <div id="crawl-status-message" class="message info" style="margin-top: 10px;">상태: 대기 중</div>
+        </div>
+        {% endif %}
+    </div>
+    
+    {% if upload_success %} <div class="message success">{{ upload_success }}</div> {% endif %}
+    {% if upload_error %} <div class="message error">{{ upload_error }}</div> {% endif %}
+    {% if clear_success %} <div class="message success">{{ clear_success }}</div> {% endif %}
+
+    {% if data is defined %}
+    <div id="table-container">
+        <form action="/admin/download_excel" method="post" style="margin-bottom: 10px;">
+             <input type="hidden" name="table_name_for_download" value="{{ selected_table }}">
+             <input type="hidden" name="search_login_id" value="{{ search_login_id or '' }}">
+             <input type="hidden" name="search_shorts_url" value="{{ search_shorts_url or '' }}">
+             <button type="submit">현재 조회된 모든 데이터 엑셀 다운로드</button>
+        </form>
+        
+        <div class="table-wrapper">
+            <table>
+                <thead>
+                    <tr>
+                        {% for col in columns %} <th>{{ col }}</th> {% endfor %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in data %}
+                    <tr>
+                        {% for col in columns %} <td>{{ row[col] | string }}</td> {% endfor %}
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        {% if pagination %}
+        <div class="pagination">
+            {% if pagination.has_prev %}
+                <a href="{{ url_for('admin_page', page=pagination.prev_num, table=selected_table, search_login_id=search_login_id, search_shorts_url=search_shorts_url) }}">&laquo;</a>
+            {% endif %}
+            {% for p in pagination.iter_pages(left_edge=2, right_edge=2, left_current=2, right_current=2) %}
+                {% if p %}
+                    {% if p == pagination.page %}
+                        <strong>{{ p }}</strong>
+                    {% else %}
+                        <a href="{{ url_for('admin_page', page=p, table=selected_table, search_login_id=search_login_id, search_shorts_url=search_shorts_url) }}">{{ p }}</a>
+                    {% endif %}
+                {% else %}
+                    ...
+                {% endif %}
+            {% endfor %}
+            {% if pagination.has_next %}
+                <a href="{{ url_for('admin_page', page=pagination.next_num, table=selected_table, search_login_id=search_login_id, search_shorts_url=search_shorts_url) }}">&raquo;</a>
+            {% endif %}
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
+    
+    <script>
+        const tableSelect = document.getElementById('table-select');
+        const searchFilters = document.getElementById('search-filters');
+        // ✅ [수정] 'youtube_comment' 추가
+        const searchableTables = ['event_log', 'shorts_activity', 'user_last_state', 'measurement_results', 'youtube_comment'];
+
+        function toggleSearchFilters() {
+            if (searchableTables.includes(tableSelect.value)) {
+                searchFilters.style.display = 'block';
+            } else {
+                searchFilters.style.display = 'none';
+            }
+        }
+
+        tableSelect.addEventListener('change', toggleSearchFilters);
+        window.addEventListener('load', toggleSearchFilters);
+
+        let statusInterval;
+        const crawlBtn = document.getElementById('crawl-btn');
+        const statusMsg = document.getElementById('crawl-status-message');
+        if (crawlBtn) {
+            function startCrawl() {
+                if (!confirm('시간이 오래 걸릴 수 있습니다. 댓글 크롤링을 시작하시겠습니까?')) return;
+                fetch('/admin/start_crawl', { method: 'POST' })
+                    .then(res => res.json())
+                    .then(data => {
+                        if(data.status === 'success') {
+                            crawlBtn.disabled = true;
+                            statusMsg.textContent = '상태: ' + data.message;
+                            statusInterval = setInterval(getCrawlStatus, 2000);
+                        } else {
+                            alert('Error: ' + data.message);
+                        }
+                    });
+            }
+            function getCrawlStatus() {
+                fetch('/admin/crawl_status')
+                    .then(res => res.json())
+                    .then(data => {
+                        statusMsg.textContent = '상태: ' + data.progress;
+                        if (!data.is_running) {
+                            clearInterval(statusInterval);
+                            crawlBtn.disabled = false;
+                        }
+                    });
+            }
+            window.addEventListener('load', () => {
+                fetch('/admin/crawl_status')
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.is_running) {
+                            crawlBtn.disabled = true;
+                            statusMsg.textContent = '상태: ' + data.progress;
+                            statusInterval = setInterval(getCrawlStatus, 2000);
+                        }
+                    });
+            });
+        }
+    </script>
+</body>
+</html>
