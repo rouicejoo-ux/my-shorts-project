@@ -14,16 +14,12 @@ basedir = os.path.abspath(os.path.dirname(__file__))
 app = Flask(__name__)
 
 # --- 앱 설정 ---
-app.secret_key = 'a-new-secret-key-for-autoincrement-pk'
-
-# Render PostgreSQL 호환을 위한 데이터베이스 URI 설정
+app.secret_key = 'a-new-secret-key-for-table-reset'
 db_url = os.environ.get('DATABASE_URL')
 if db_url and db_url.startswith("postgres://"):
     db_url = db_url.replace("postgres://", "postgresql://", 1)
 app.config['SQLALCHEMY_DATABASE_URI'] = db_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-
-# --- 확장 초기화 ---
 db = SQLAlchemy(app)
 
 # --- 외부 설정 및 전역 변수 ---
@@ -405,7 +401,7 @@ def crawl_comments_task():
     with app.app_context():
         global CRAWL_STATUS
         try:
-            if not YOUTUBE_API_KEY or "여기에" in YOUTUBE_API_KEY:
+            if not YOUTUBE_API_KEY:
                 CRAWL_STATUS['progress'] = "오류 발생: YouTube API 키가 환경 변수에 설정되지 않았습니다."
                 CRAWL_STATUS['is_running'] = False
                 return
@@ -455,13 +451,24 @@ def crawl_status():
     return jsonify(CRAWL_STATUS)
 
 
-# --- 데이터베이스 초기화를 위한 명령어 ---
+# --- 데이터베이스 명령어 ---
 @app.cli.command("init_db")
 def init_db_command():
     """데이터베이스 테이블을 생성합니다."""
     with app.app_context():
         db.create_all()
         print("Initialized the database.")
+
+@app.cli.command("reset_comments")
+def reset_comments_command():
+    """youtube_comment 테이블을 삭제하고 다시 생성합니다."""
+    with app.app_context():
+        table = YoutubeComment.__table__
+        print("Dropping youtube_comment table...")
+        table.drop(db.engine, checkfirst=True)
+        print("Recreating youtube_comment table...")
+        table.create(db.engine)
+        print("youtube_comment table recreated successfully.")
 
 if __name__ == '__main__':
     with app.app_context():
