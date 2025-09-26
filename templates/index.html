@@ -3,274 +3,208 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>YouTube Shorts Viewer</title>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.css"/>
-    <style>
-        html, body { position: relative; height: 100%; margin: 0; padding: 0; background-color: #000; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
-        .swiper { width: 100%; height: 100%; }
-        .swiper-slide { text-align: center; font-size: 18px; background: #000; display: flex; justify-content: center; align-items: center; }
-        .video-container { width: 100%; height: 100%; position: relative; }
-        .video-player { width: 100%; height: 100%; object-fit: contain; }
-        .ui-overlay { position: absolute; bottom: 0; left: 0; right: 0; padding: 20px; color: white; text-shadow: 1px 1px 2px black; background: linear-gradient(to top, rgba(0,0,0,0.7), transparent); display: flex; justify-content: space-between; align-items: flex-end; }
-        .video-info { text-align: left; }
-        .channel-info { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
-        .channel-profile { width: 40px; height: 40px; border-radius: 50%; }
-        .description { font-size: 14px; }
-        .sidebar { display: flex; flex-direction: column; gap: 20px; align-items: center; }
-        .sidebar-icon { display: flex; flex-direction: column; align-items: center; cursor: pointer; }
-        .sidebar-icon img { width: 35px; height: 35px; filter: invert(1); }
-        .sidebar-icon span { font-size: 12px; margin-top: 5px; }
-        .sidebar-icon.active img { filter: invert(48%) sepia(89%) saturate(2221%) hue-rotate(335deg) brightness(101%) contrast(93%); }
-        .comments-panel { position: fixed; bottom: -100%; left: 0; width: 100%; height: 60%; background-color: #212121; border-top-left-radius: 20px; border-top-right-radius: 20px; transition: bottom 0.3s ease-in-out; z-index: 1000; display: flex; flex-direction: column; }
-        .comments-panel.active { bottom: 0; }
-        .comments-header { padding: 15px; text-align: center; color: white; font-weight: bold; border-bottom: 1px solid #444; display: flex; justify-content: space-between; align-items: center; }
-        .comments-header .close-btn { cursor: pointer; font-size: 24px; line-height: 1; }
-        .comments-body { flex-grow: 1; overflow-y: auto; padding: 15px; color: white; }
-        .comment-item { display: flex; gap: 10px; margin-bottom: 15px; }
-        .comment-author-profile { width: 32px; height: 32px; border-radius: 50%; }
-        .comment-content { text-align: left; flex-grow: 1; }
-        .comment-author-name { font-weight: bold; font-size: 14px; margin-bottom: 4px; }
-        .comment-text { font-size: 14px; white-space: pre-wrap; }
-        .comment-replies { margin-left: 42px; margin-top: 10px; }
-    </style>
+    <title>YouTube Shorts Clone</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script src="https://www.youtube.com/iframe_api"></script>
 </head>
 <body>
-    <div class="swiper">
-        <div class="swiper-wrapper">
-            <div class="swiper-slide">
-                <div style="color: white; text-align: center;">
-                    <h2>감응아비투스_웹사이트</h2>
-                    <p>스크롤하면<br>숏폼 시청이 시작됩니다</p>
-                </div>
+    <input type="hidden" id="user_id" value="{{ user_id }}">
+    <input type="hidden" id="session_id" value="{{ session_id }}">
+    <div class="shorts-container">
+        <div class="short-start-message"><h2>스크롤하면<br>숏폼 시청이 시작됩니다</h2></div>
+        {% for short in shorts %}
+        <div class="short" data-seq="{{ short.seq }}" data-url="{{ short.url }}">
+            <div class="player" id="player-{{ short.seq }}" data-video-id="{{ short.video_id }}"></div>
+            <div class="progress-bar-container"><div class="progress-bar"></div></div>
+            <div class="actions">
+                <div class="action-btn like-btn">❤️<span>0</span></div>
+                <div class="action-btn dislike-btn">👎<span>0</span></div>
+                <div class="action-btn comment-btn">💬<span>{{ short.comment_count }}</span></div>
+                <div class="action-btn share-btn state-toggle-btn">🔗<span>공유</span></div>
+                <div class="action-btn interested-btn state-toggle-btn">🚫<span>관심없음</span></div>
+                <div class="action-btn recommend-btn state-toggle-btn">🔇<span>채널추천안함</span></div>
+                <div class="action-btn report-btn state-toggle-btn">🚩<span>신고</span></div>
             </div>
-
-            {% for s in shorts %}
-            <div class="swiper-slide" data-url="{{ s.url }}" data-seq="{{ s.seq }}" data-video-id="{{ s.video_id }}">
-                <div class="video-container">
-                    <div id="player-{{ s.seq }}" class="video-player"></div>
-                    <div class="ui-overlay">
-                        <div class="video-info">
-                            <div class="channel-info">
-                                <img src="{{ s.channel_profile_url }}" class="channel-profile">
-                                <span>{{ s.channel_name }}</span>
-                            </div>
-                            <p class="description">{{ s.description }}</p>
-                        </div>
-                        <div class="sidebar">
-                            <div class="sidebar-icon like-btn" onclick="handleActivity(this, '좋아요')">
-                                <img src="https://static.thenounproject.com/png/5253303-200.png">
-                                <span>좋아요</span>
-                            </div>
-                            <div class="sidebar-icon dislike-btn" onclick="handleActivity(this, '싫어요')">
-                                <img src="https://static.thenounproject.com/png/5253301-200.png">
-                                <span>싫어요</span>
-                            </div>
-                             <div class="sidebar-icon comments-btn" onclick="openComments('{{ s.url }}')">
-                                <img src="https://static.thenounproject.com/png/5253267-200.png">
-                                <span>{{ s.comment_count }}</span>
-                            </div>
-                        </div>
-                    </div>
+            <div class="info">
+                <div class="channel">
+                    <img src="{{ short.channel_profile_url }}" alt="프로필">
+                    <span>{{ short.channel_name }}</span>
+                    <button class="subscribe-btn">구독</button>
                 </div>
+                <div>{{ short.description }}</div>
             </div>
-            {% endfor %}
+            <div class="like-anim">❤️</div>
         </div>
-        <div class="swiper-pagination"></div>
+        {% endfor %}
     </div>
 
-    <div id="comments-panel" class="comments-panel">
-        <div class="comments-header">
-            <span>댓글</span>
-            <span class="close-btn" onclick="closeComments()">&times;</span>
-        </div>
-        <div id="comments-body" class="comments-body">
-            </div>
+    <div class="bottom-nav">
+        <div>🏠 홈</div> <div>🎬 Shorts</div> <div>➕</div> <div>📺 구독</div> <div>👤 내 페이지</div>
     </div>
-    
-    <script src="https://www.youtube.com/iframe_api"></script>
-    <script src="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.js"></script>
+
+    <div class="comments-popup" id="commentsPopup">
+        <div class="comments-header"><span id="comment-count">댓글</span><button class="close-comment-btn">닫기</button></div>
+        <div class="comments-list" id="commentsList"></div>
+        <div class="comment-input"><input type="text" id="commentInput" placeholder="댓글 추가..."><button id="add-comment-btn">게시</button></div>
+    </div>
+
     <script>
-        const USER_ID = '{{ user_id }}';
-        const SESSION_ID = '{{ session_id }}';
+        const ACTIVITY_MAP = {{ activity_map | tojson }};
+        const LAST_WATCHED_URL = "{{ last_watched_url or '' }}";
+    </script>
+    <script>
+        const USER_ID = document.getElementById('user_id').value;
+        const SESSION_ID = document.getElementById('session_id').value;
+        let currentShortUrl = '';
         let players = {};
-        let activePlayer = null;
-        let swiper;
-        
-        function onYouTubeIframeAPIReady() {
-            swiper = new Swiper('.swiper', {
-                direction: 'vertical',
-                pagination: { el: '.swiper-pagination', clickable: true },
-                on: {
-                    init: function () {
-                        // 첫 슬라이드는 안내 문구이므로, 비디오 로드를 하지 않습니다.
-                        if (this.activeIndex > 0) {
-                           loadAndPlayVideo(this.slides[this.activeIndex]);
-                        }
-                    },
-                    slideChange: function () {
-                        stopAllVideos();
-                        // 0번 인덱스는 안내 슬라이드이므로 비디오 관련 동작을 하지 않습니다.
-                        if (this.activeIndex > 0) {
-                            loadAndPlayVideo(this.slides[this.activeIndex]);
-                        }
-                    }
-                }
-            });
-        }
+        let progressInterval;
+        let ignoreNextPauseLog = false;
 
-        function loadAndPlayVideo(slide) {
-            if (!slide || !slide.dataset.seq) return; // 안내 슬라이드 예외 처리
-            const seq = slide.dataset.seq;
-            if (players[seq]) {
-                playVideo(seq);
-            } else {
-                createPlayer(slide);
-            }
-        }
-
-        function createPlayer(slide) {
-            const seq = slide.dataset.seq;
-            const videoId = slide.dataset.videoId;
-            players[seq] = new YT.Player(`player-${seq}`, {
-                height: '100%',
-                width: '100%',
-                videoId: videoId,
-                playerVars: { 'autoplay': 1, 'controls': 0, 'loop': 1, 'playlist': videoId, 'mute': 1 },
-                events: { 'onReady': (event) => onPlayerReady(event, seq) }
-            });
-        }
-
-        function onPlayerReady(event, seq) {
-            // 슬라이드가 활성화된 상태일 때만 재생
-            if (swiper.activeIndex === Array.from(swiper.slides).findIndex(s => s.dataset.seq === seq)) {
-                 playVideo(seq);
-            }
-        }
-
-        function playVideo(seq) {
-            if (players[seq] && typeof players[seq].playVideo === 'function') {
-                players[seq].playVideo();
-                players[seq].unMute();
-                activePlayer = players[seq];
-                logEvent('시청시작');
-            }
-        }
-
-        function stopAllVideos() {
-            if (activePlayer) {
-                logEvent('시청중지_종료');
-            }
-            for (let seq in players) {
-                if (players[seq] && typeof players[seq].stopVideo === 'function') {
-                    players[seq].stopVideo();
-                }
-            }
-            activePlayer = null;
-        }
-
-        function logEvent(eventType) {
-            if (!activePlayer || !activePlayer.getVideoUrl) return;
-            const videoData = activePlayer.getVideoData();
-            if (!videoData.video_id) return; // 비디오 ID가 없는 경우 (오류 방지)
-            const videoUrl = `https://youtube.com/shorts/${videoData.video_id}`;
-            fetch('/log_event', {
+        // ✅ [수정] 페이지 이탈 시에도 로그를 보낼 수 있도록 keepalive 옵션 추가
+        function logEvent(eventType, shortsUrl, useKeepalive = false) {
+            const fetchOptions = {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    login_id: USER_ID,
-                    session_id: SESSION_ID,
-                    shorts_url: videoUrl,
-                    event_type: eventType
+                body: JSON.stringify({ 
+                    login_id: USER_ID, 
+                    shorts_url: shortsUrl, 
+                    event_type: eventType, 
+                    session_id: SESSION_ID 
                 })
-            });
-        }
-
-        // --- 댓글 페이징 관련 변수 ---
-        let currentPage = 1;
-        let isLoading = false;
-        let hasMoreComments = true;
-        let currentShortsUrl = '';
-        const commentsPanel = document.getElementById('comments-panel');
-        const commentsContainer = document.getElementById('comments-body');
-
-        // --- openComments 함수 ---
-        function openComments(shortsUrl) {
-            logEvent('댓글클릭');
-            currentPage = 1;
-            hasMoreComments = true;
-            isLoading = false;
-            commentsContainer.innerHTML = '';
-            currentShortsUrl = shortsUrl;
-            
-            fetchAndDisplayComments();
-            commentsPanel.classList.add('active');
-            if (activePlayer) activePlayer.pauseVideo();
-        }
-
-        function closeComments() {
-            logEvent('댓글닫기클릭');
-            commentsPanel.classList.remove('active');
-            if (activePlayer) activePlayer.playVideo();
-        }
-
-        // --- 댓글을 가져와서 표시하는 함수 ---
-        function fetchAndDisplayComments() {
-            if (isLoading || !hasMoreComments) return;
-            isLoading = true;
-
-            fetch(`/get_comments?url=${encodeURIComponent(currentShortsUrl)}&page=${currentPage}`)
-                .then(response => response.json())
-                .then(data => {
-                    data.comments.forEach(comment => {
-                        commentsContainer.innerHTML += renderComment(comment);
-                    });
-                    hasMoreComments = data.has_next_page;
-                    isLoading = false;
-                    currentPage++;
-                })
-                .catch(error => {
-                    console.error('Error fetching comments:', error);
-                    isLoading = false;
-                });
-        }
-
-        function renderComment(comment) {
-            let repliesHtml = '';
-            if (comment.replies && comment.replies.length > 0) {
-                repliesHtml = '<div class="comment-replies">';
-                comment.replies.forEach(reply => {
-                    repliesHtml += renderSingleComment(reply);
-                });
-                repliesHtml += '</div>';
+            };
+            if (useKeepalive) {
+                fetchOptions.keepalive = true;
             }
-            return renderSingleComment(comment) + repliesHtml;
+            fetch('/log_event', fetchOptions);
+        }
+        
+        function onYouTubeIframeAPIReady() { const playerDivs = document.querySelectorAll('.player'); playerDivs.forEach(div => { const videoId = div.dataset.videoId; const playerId = div.id; const player = new YT.Player(playerId, { videoId: videoId, playerVars: { 'autoplay': 0, 'controls': 0, 'mute': 0, 'loop': 1, 'playlist': videoId, 'modestbranding': 1, 'showinfo': 0, 'rel': 0 }, events: { 'onStateChange': onPlayerStateChange } }); players[playerId] = player; }); }
+        
+        function onPlayerStateChange(event) {
+            const player = event.target;
+            const playerDiv = player.getIframe().parentNode;
+            const shortElement = playerDiv.closest('.short');
+            if (!shortElement) return;
+            const shortsUrl = shortElement.dataset.url;
+            const progressBar = shortElement.querySelector('.progress-bar');
+            
+            if (event.data === YT.PlayerState.PLAYING) {
+                logEvent('시청시작', shortsUrl);
+                clearInterval(progressInterval);
+                progressInterval = setInterval(() => {
+                    const currentTime = player.getCurrentTime();
+                    const duration = player.getDuration();
+                    if (duration > 0) { progressBar.style.width = (currentTime / duration) * 100 + '%'; }
+                }, 100);
+            } else if (event.data === YT.PlayerState.PAUSED) {
+                if (ignoreNextPauseLog) {
+                    ignoreNextPauseLog = false; 
+                } else {
+                    logEvent('시청중지_종료', shortsUrl);
+                }
+                clearInterval(progressInterval);
+            } else {
+                 clearInterval(progressInterval);
+                 if (event.data === YT.PlayerState.ENDED) { progressBar.style.width = '0%'; }
+            }
+        }
+        
+        const shorts = document.querySelectorAll('.short');
+        const observer = new IntersectionObserver((entries) => { entries.forEach(entry => { const playerDiv = entry.target.querySelector('.player'); if (!playerDiv) return; const playerId = playerDiv.id; const player = players[playerId]; if (player && typeof player.playVideo === 'function') { if (entry.isIntersecting) { currentShortUrl = entry.target.dataset.url; player.playVideo(); } else { player.pauseVideo(); } } }); }, { threshold: 0.6 });
+        
+        function startShortsFeed() {
+            shorts.forEach(short => observer.observe(short));
+            if (LAST_WATCHED_URL) {
+                const lastWatchedElement = document.querySelector(`.short[data-url="${LAST_WATCHED_URL}"]`);
+                if (lastWatchedElement) { lastWatchedElement.scrollIntoView({ behavior: 'smooth' }); }
+            }
         }
 
-        function renderSingleComment(c) {
-            return `
-                <div class="comment-item">
-                    <img src="${c.author_profile_image_url}" class="comment-author-profile">
-                    <div class="comment-content">
-                        <div class="comment-author-name">${c.author_name}</div>
-                        <div class="comment-text">${c.comment_text}</div>
-                    </div>
-                </div>
-            `;
+        // --- (이하 나머지 코드는 이전과 동일) ---
+        shorts.forEach(short => { short.addEventListener('click', (e) => { const playerDiv = short.querySelector('.player'); if (!playerDiv) return; const playerId = playerDiv.id; const player = players[playerId]; if (player && typeof player.getPlayerState === 'function') { const playerState = player.getPlayerState(); if (playerState === YT.PlayerState.PLAYING) { player.pauseVideo(); } else { player.playVideo(); } } }); });
+        function restoreActivityStates() { shorts.forEach(short => { const shortsUrl = short.dataset.url; const state = ACTIVITY_MAP[shortsUrl]; if (!state) return; if (state['좋아요'] === 1) { const btn = short.querySelector('.like-btn'); btn.querySelector('span').textContent = '1'; btn.classList.add('active'); } if (state['싫어요'] === 1) { const btn = short.querySelector('.dislike-btn'); btn.querySelector('span').textContent = '1'; btn.classList.add('active'); } if (state['공유'] === 1) { short.querySelector('.share-btn').classList.add('active'); } if (state['관심없음'] === 1) { short.querySelector('.interested-btn').classList.add('active'); } if (state['채널추천안함'] === 1) { short.querySelector('.recommend-btn').classList.add('active'); } if (state['신고'] === 1) { short.querySelector('.report-btn').classList.add('active'); } if (state['구독'] === 1) { const btn = short.querySelector('.subscribe-btn'); btn.textContent = '구독중'; btn.classList.add('active'); } }); }
+        window.addEventListener('load', () => {
+             restoreActivityStates();
+             // 페이지 로드 시 바로 피드 시작
+             startShortsFeed();
+        });
+        document.querySelectorAll('.short').forEach(short => { const likeBtn = short.querySelector('.like-btn'); const dislikeBtn = short.querySelector('.dislike-btn'); const likeSpan = likeBtn.querySelector('span'); const dislikeSpan = dislikeBtn.querySelector('span'); const shortsUrl = short.dataset.url; likeBtn.addEventListener('click', (e) => { e.stopPropagation(); if (likeSpan.textContent === '0') { likeSpan.textContent = '1'; likeBtn.classList.add('active'); logEvent('좋아요', shortsUrl); if (dislikeSpan.textContent === '1') { dislikeSpan.textContent = '0'; dislikeBtn.classList.remove('active'); logEvent('싫어요취소', shortsUrl); } } else { likeSpan.textContent = '0'; likeBtn.classList.remove('active'); logEvent('좋아요취소', shortsUrl); } }); dislikeBtn.addEventListener('click', (e) => { e.stopPropagation(); if (dislikeSpan.textContent === '0') { dislikeSpan.textContent = '1'; dislikeBtn.classList.add('active'); logEvent('싫어요', shortsUrl); if (likeSpan.textContent === '1') { likeSpan.textContent = '0'; likeBtn.classList.remove('active'); logEvent('좋아요취소', shortsUrl); } } else { dislikeSpan.textContent = '0'; dislikeBtn.classList.remove('active'); logEvent('싫어요취소', shortsUrl); } }); });
+        document.querySelectorAll('.state-toggle-btn').forEach(btn => { btn.addEventListener('click', (e) => { e.stopPropagation(); const shortsUrl = e.currentTarget.closest('.short').dataset.url; const isActive = e.currentTarget.classList.toggle('active'); let eventType = ''; if (btn.classList.contains('share-btn')) eventType = '공유'; else if (btn.classList.contains('interested-btn')) eventType = '관심없음'; else if (btn.classList.contains('recommend-btn')) eventType = '채널추천안함'; else if (btn.classList.contains('report-btn')) eventType = '신고'; logEvent(isActive ? eventType : eventType + '취소', shortsUrl); }); });
+        document.querySelectorAll('.subscribe-btn').forEach(btn => { btn.addEventListener('click', (e) => { e.stopPropagation(); const shortsUrl = e.currentTarget.closest('.short').dataset.url; if (e.currentTarget.textContent === '구독') { e.currentTarget.textContent = '구독중'; e.currentTarget.classList.add('active'); logEvent('구독', shortsUrl); } else { e.currentTarget.textContent = '구독'; e.currentTarget.classList.remove('active'); logEvent('구독취소', shortsUrl); } }); });
+        const commentsPopup = document.getElementById('commentsPopup');
+        const commentsList = document.getElementById('commentsList');
+        const commentCountSpan = document.getElementById('comment-count');
+        const commentInput = document.getElementById('commentInput');
+        const addCommentBtn = document.getElementById('add-comment-btn');
+        function createCommentHTML(comment) { let repliesHTML = ''; if (comment.replies && comment.replies.length > 0) { repliesHTML += '<div class="replies-container">'; comment.replies.forEach(reply => { repliesHTML += createCommentHTML(reply); }); repliesHTML += '</div>'; } return ` <div class="comment" id="comment-${comment.comment_id}"> <img src="${comment.author_profile_image_url || 'https://via.placeholder.com/32'}" alt="프로필"> <div class="comment-body"> <div class="comment-meta"><strong>${comment.author_name}</strong> · <span class="date">${formatTimeAgo(comment.published_at)}</span></div> <div class="comment-text">${comment.comment_text}</div> <div class="comment-actions"> <span>❤️ ${comment.like_count}</span> <span onclick="showReplyForm('${comment.comment_id}')">답글</span> </div> ${repliesHTML} </div> </div>`; }
+        function showReplyForm(parentId) { const existingForm = document.getElementById('reply-form'); if(existingForm) existingForm.remove(); const parentComment = document.getElementById(`comment-${parentId}`).querySelector('.comment-body'); const replyFormHTML = ` <div id="reply-form" class="reply-form"> <input type="text" id="reply-input" placeholder="답글 추가..."> <button onclick="postComment('${parentId}')">게시</button> <button onclick="document.getElementById('reply-form').remove()">취소</button> </div>`; parentComment.insertAdjacentHTML('beforeend', replyFormHTML); document.getElementById('reply-input').focus(); }
+        async function postComment(parentId = null) { const inputElem = parentId ? document.getElementById('reply-input') : commentInput; const commentText = inputElem.value.trim(); if (!commentText) return; const response = await fetch('/add_comment', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ shorts_url: currentShortUrl, comment_text: commentText, parent_id: parentId }) }); const newComment = await response.json(); if (newComment.error) { alert('댓글 작성 실패: ' + newComment.error); } else { const newCommentHTML = createCommentHTML({ ...newComment, replies: [] }); if (parentId) { const parentContainer = document.getElementById(`comment-${parentId}`).querySelector('.replies-container') || document.getElementById(`comment-${parentId}`).querySelector('.comment-body'); if (!parentContainer.querySelector('.replies-container')) { parentContainer.insertAdjacentHTML('beforeend', '<div class="replies-container"></div>'); } parentContainer.querySelector('.replies-container').insertAdjacentHTML('beforeend', newCommentHTML); document.getElementById('reply-form').remove(); } else { if (commentsList.innerHTML.includes('아직 댓글이 없습니다.')) commentsList.innerHTML = ''; commentsList.insertAdjacentHTML('beforeend', newCommentHTML); inputElem.value = ''; commentsList.scrollTop = commentsList.scrollHeight; } } }
+        addCommentBtn.addEventListener('click', () => postComment(null));
+        commentInput.addEventListener('keyup', (event) => { if (event.key === 'Enter') postComment(null); });
+        function toggleComments(shortsUrl) { const popup = document.getElementById('commentsPopup'); const isOpen = popup.style.bottom === "0px"; if (isOpen) { popup.style.bottom = "-100%"; } else { fetchAndRenderComments(shortsUrl); popup.style.bottom = "0px"; } }
+        document.querySelectorAll('.comment-btn').forEach(btn => { btn.addEventListener('click', (e) => { e.stopPropagation(); const shortElement = e.currentTarget.closest('.short'); const shortsUrl = shortElement.dataset.url; const playerDiv = shortElement.querySelector('.player'); const playerId = playerDiv.id; const player = players[playerId]; if (player && typeof player.pauseVideo === 'function') { player.pauseVideo(); } logEvent('댓글클릭', shortsUrl); toggleComments(shortsUrl); }); });
+        document.querySelector('.close-comment-btn').addEventListener('click', (e) => { logEvent('댓글닫기클릭', currentShortUrl); toggleComments(currentShortUrl); const currentShortElement = Array.from(shorts).find(short => short.dataset.url === currentShortUrl); if (currentShortElement) { const playerDiv = currentShortElement.querySelector('.player'); const playerId = playerDiv.id; const player = players[playerId]; if (player && typeof player.playVideo === 'function') { ignoreNextPauseLog = true; player.playVideo(); } } });
+        function formatTimeAgo(dateString) { const date = new Date(dateString); const now = new Date(); const seconds = Math.floor((now - date) / 1000); let interval = seconds / 31536000; if (interval > 1) return Math.floor(interval) + "년 전"; interval = seconds / 2592000; if (interval > 1) return Math.floor(interval) + "개월 전"; interval = seconds / 86400; if (interval > 1) return Math.floor(interval) + "일 전"; interval = seconds / 3600; if (interval > 1) return Math.floor(interval) + "시간 전"; interval = seconds / 60; if (interval > 1) return Math.floor(interval) + "분 전"; return "방금 전"; }
+        async function fetchAndRenderComments(shortsUrl) { commentsList.innerHTML = '로딩 중...'; const response = await fetch(`/get_comments?url=${encodeURIComponent(shortsUrl)}`); const comments = await response.json(); commentsList.innerHTML = ''; let totalComments = 0; if (comments.error) { commentsList.innerHTML = '댓글을 불러오는 데 실패했습니다.'; } else { comments.forEach(comment => { commentsList.innerHTML += createCommentHTML(comment); totalComments += 1 + (comment.replies ? comment.replies.length : 0); }); if (comments.length === 0) { commentsList.innerHTML = '아직 댓글이 없습니다.'; } } commentCountSpan.textContent = `댓글 ${totalComments}개`; }
+
+// ... (이전 async function fetchAndRenderComments(shortsUrl) { ... } 함수는 그대로 둡니다) ...
+
+        // ✅ [추가] 스크롤 제어 및 주소창 숨김 로직
+        const shortsContainer = document.querySelector('.shorts-container');
+        let canScroll = true;
+        let scrollTimeout;
+
+        // 스크롤/스와이프 후 일정 시간 동안 추가 입력을 무시하는 함수
+        function preventScrollAbuse() {
+            canScroll = false;
+            clearTimeout(scrollTimeout);
+            scrollTimeout = setTimeout(() => {
+                canScroll = true;
+            }, 800); // 0.7초의 딜레이를 줍니다. 이 시간 동안 추가 스크롤/스와이프는 무시됩니다.
         }
 
-        // --- 댓글 컨테이너에 스크롤 이벤트 리스너 추가 ---
-        commentsContainer.addEventListener('scroll', () => {
-            if (commentsContainer.scrollTop + commentsContainer.clientHeight >= commentsContainer.scrollHeight - 10 && !isLoading && hasMoreComments) {
-                fetchAndDisplayComments();
+        // 마우스 휠 이벤트 제어
+        shortsContainer.addEventListener('wheel', (e) => {
+            if (!canScroll) {
+                e.preventDefault();
+                return;
+            }
+            preventScrollAbuse();
+        }, { passive: false });
+
+        // 터치 스와이프 이벤트 제어 (모바일용)
+        let touchstartY = 0;
+        shortsContainer.addEventListener('touchstart', (e) => {
+            touchstartY = e.changedTouches[0].screenY;
+        }, { passive: true });
+
+        shortsContainer.addEventListener('touchmove', (e) => {
+            if (!canScroll) {
+                e.preventDefault();
+                return;
+            }
+            const touchendY = e.changedTouches[0].screenY;
+            // 일정 거리(10px) 이상 스와이프했을 때만 딜레이 적용
+            if (Math.abs(touchstartY - touchendY) > 30) { 
+                preventScrollAbuse();
+            }
+        }, { passive: false });
+        
+        // ✅ [수정] 페이지 로드 시 주소창 숨김 및 피드 시작
+        window.addEventListener('load', () => {
+             restoreActivityStates();
+             startShortsFeed();
+             // 모바일에서 주소창을 숨기기 위해 약간 스크롤
+             setTimeout(() => window.scrollTo(0, 1), 100);
+        });
+
+        // 페이지를 떠날 때 시청중지 로그를 남기는 이벤트 리스너 (이전과 동일)
+        window.addEventListener('pagehide', () => {
+            if (currentShortUrl) {
+                // keepalive 옵션을 사용하여 페이지가 닫히는 중에도 요청이 취소되지 않도록 함
+                logEvent('시청중지_종료', currentShortUrl, true);
             }
         });
-        
-        // --- (handleActivity 함수는 이전과 동일) ---
-        function handleActivity(element, eventType) {
-            // 이 함수는 이전 버전의 코드와 동일하게 유지됩니다.
-            // (좋아요/싫어요 등 버튼 클릭 처리 로직)
-        }
-
     </script>
 </body>
 </html>
