@@ -40,7 +40,7 @@ body {
 .actions {
   position: absolute;
   right: 10px;
-  bottom: 120px;
+  bottom: 140px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -61,11 +61,12 @@ body {
 }
 .info {
   position: absolute;
-  bottom: 60px;
+  bottom: 140px;  /* '관심없음' 라인 근처로 위치 조정 */
   left: 10px;
   color: white;
   font-size: 14px;
   z-index: 10;
+  text-align: left;
 }
 .channel {
   display: flex;
@@ -202,7 +203,7 @@ body {
 /* ✅ [추가] 영상 하단 상태바 스타일 */
 .progress-bar-container {
   position: absolute;
-  bottom: 50px; /* 하단 정보(info) 영역 바로 위 */
+  bottom: 130px; /* 하단 정보(info) 영역 바로 위 */
   left: 10px;
   width: calc(100% - 20px);
   height: 3px;

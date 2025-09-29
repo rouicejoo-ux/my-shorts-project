@@ -185,7 +185,7 @@
             }
             const touchendY = e.changedTouches[0].screenY;
             // 일정 거리(10px) 이상 스와이프했을 때만 딜레이 적용
-            if (Math.abs(touchstartY - touchendY) > 30) { 
+            if (Math.abs(touchstartY - touchendY) > 50) { 
                 preventScrollAbuse();
             }
         }, { passive: false });
